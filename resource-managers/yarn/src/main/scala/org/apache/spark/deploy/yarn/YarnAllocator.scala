@@ -344,7 +344,7 @@ private[yarn] class YarnAllocator(
         val gpuResource = sparkConf.get(YARN_GPU_DEVICE)
         val fpgaResource = sparkConf.get(YARN_FPGA_DEVICE)
         getYarnResourcesAndAmounts(sparkConf, config.YARN_EXECUTOR_RESOURCE_TYPES_PREFIX) ++
-          customSparkResources.view.filterKeys { r =>
+          customSparkResources.filter { case (r, _) =>
             (r == gpuResource || r == fpgaResource)
           }
       } else {
@@ -385,7 +385,10 @@ private[yarn] class YarnAllocator(
     this.hostToLocalTaskCountPerResourceProfileId = hostToLocalTaskCountPerResourceProfileId
 
     if (resourceProfileToTotalExecs.isEmpty) {
-      targetNumExecutorsPerResourceProfileId.clear()
+      // Set target executor number to 0 to cancel pending allocate request.
+      targetNumExecutorsPerResourceProfileId.keys.foreach { rp =>
+        targetNumExecutorsPerResourceProfileId(rp) = 0
+      }
       allocatorNodeHealthTracker.setSchedulerExcludedNodes(excludedNodes)
       true
     } else {
