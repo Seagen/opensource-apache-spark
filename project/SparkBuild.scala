@@ -232,11 +232,8 @@ object SparkBuild extends PomBuild {
         "-Wconf:cat=deprecation:wv,any:e",
         // 2.13-specific warning hits to be muted (as narrowly as possible) and addressed separately
         "-Wunused:imports",
-        // SPARK-33775 Suppress compilation warnings that contain the following contents.
-        // TODO(SPARK-33805): Undo the corresponding deprecated usage suppression rule after
-        //  fixed.
         "-Wconf:msg=^(?=.*?method|value|type|object|trait|inheritance)(?=.*?deprecated)(?=.*?since 2.13).+$:e",
-        "-Wconf:msg=^(?=.*?Widening conversion from)(?=.*?is deprecated because it loses precision).+$:s",
+        "-Wconf:msg=^(?=.*?Widening conversion from)(?=.*?is deprecated because it loses precision).+$:e",
         // SPARK-45610 Convert "Auto-application to `()` is deprecated" to compile error, as it will become a compile error in Scala 3.
         "-Wconf:cat=deprecation&msg=Auto-application to \\`\\(\\)\\` is deprecated:e",
         // TODO(SPARK-45615): The issue described by https://github.com/scalatest/scalatest/issues/2297 can cause false positives.
@@ -247,8 +244,6 @@ object SparkBuild extends PomBuild {
         "-Wconf:cat=deprecation&msg=Auto-application to \\`\\(\\)\\` is deprecated&site=org.apache.spark.streaming.kafka010.KafkaRDDSuite:s",
         // SPARK-35574 Prevent the recurrence of compilation warnings related to `procedure syntax is deprecated`
         "-Wconf:cat=deprecation&msg=procedure syntax is deprecated:e",
-        // SPARK-40497 Upgrade Scala to 2.13.11 and suppress `Implicit definition should have explicit type`
-        "-Wconf:msg=Implicit definition should have explicit type:s",
         // SPARK-45627 Symbol literals are deprecated in Scala 2.13 and it's a compile error in Scala 3.
         "-Wconf:cat=deprecation&msg=symbol literal is deprecated:e",
         // SPARK-45627 `enum`, `export` and `given` will become keywords in Scala 3,
@@ -299,21 +294,16 @@ object SparkBuild extends PomBuild {
 
     javaOptions ++= {
       val versionParts = System.getProperty("java.version").split("[+.\\-]+", 3)
-      var major = versionParts(0).toInt
+      val major = versionParts(0).toInt
       if (major >= 21) {
         Seq("--add-modules=jdk.incubator.vector", "-Dforeign.restricted=warn")
-      } else if (major >= 16) {
-        Seq("--add-modules=jdk.incubator.vector,jdk.incubator.foreign", "-Dforeign.restricted=warn")
       } else {
-        Seq.empty
+        Seq("--add-modules=jdk.incubator.vector,jdk.incubator.foreign", "-Dforeign.restricted=warn")
       }
     },
 
     (Compile / doc / javacOptions) ++= {
-      val versionParts = System.getProperty("java.version").split("[+.\\-]+", 3)
-      var major = versionParts(0).toInt
-      if (major == 1) major = versionParts(1).toInt
-      if (major >= 8) Seq("-Xdoclint:all", "-Xdoclint:-missing") else Seq.empty
+      Seq("-Xdoclint:all", "-Xdoclint:-missing")
     },
 
     javaVersion := SbtPomKeys.effectivePom.value.getProperties.get("java.version").asInstanceOf[String],
@@ -425,8 +415,7 @@ object SparkBuild extends PomBuild {
   /* Protobuf settings */
   enable(SparkProtobuf.settings)(protobuf)
 
-  // SPARK-14738 - Remove docker tests from main Spark build
-  // enable(DockerIntegrationTests.settings)(dockerIntegrationTests)
+  enable(DockerIntegrationTests.settings)(dockerIntegrationTests)
 
   if (!profiles.contains("volcano")) {
     enable(Volcano.settings)(kubernetes)
@@ -956,7 +945,7 @@ object Unsafe {
 object DockerIntegrationTests {
   // This serves to override the override specified in DependencyOverrides:
   lazy val settings = Seq(
-    dependencyOverrides += "com.google.guava" % "guava" % "18.0"
+    dependencyOverrides += "com.google.guava" % "guava" % "19.0"
   )
 }
 
@@ -1378,6 +1367,7 @@ object Unidoc {
     classpaths
       .map(_.filterNot(_.data.getCanonicalPath.matches(""".*kafka-clients-0\.10.*""")))
       .map(_.filterNot(_.data.getCanonicalPath.matches(""".*kafka_2\..*-0\.10.*""")))
+      .map(_.filterNot(_.data.getCanonicalPath.contains("apache-rat")))
   }
 
   val unidocSourceBase = settingKey[String]("Base URL of source links in Scaladoc.")
@@ -1416,10 +1406,6 @@ object Unidoc {
     },
 
     (JavaUnidoc / unidoc / javacOptions) := {
-      val versionParts = System.getProperty("java.version").split("[+.\\-]+", 3)
-      var major = versionParts(0).toInt
-      if (major == 1) major = versionParts(1).toInt
-
       Seq(
         "-windowtitle", "Spark " + version.value.replaceAll("-SNAPSHOT", "") + " JavaDoc",
         "-public",
@@ -1431,7 +1417,8 @@ object Unidoc {
         "-tag", "constructor:X",
         "-tag", "todo:X",
         "-tag", "groupname:X",
-      ) ++ { if (major >= 9) Seq("--ignore-source-errors", "-notree") else Seq.empty }
+        "--ignore-source-errors", "-notree"
+      )
     },
 
     // Use GitHub repository for Scaladoc source links
